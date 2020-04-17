@@ -16,10 +16,9 @@ static void hdl (int sig)
  
 int main (int argc, char *argv[])
 {
-	sigset_t mask;
-	sigset_t orig_mask;
+	sigset_t mask, orig_mask;
+
 	struct sigaction act;
- 
 	memset (&act, 0, sizeof(act));
 	act.sa_handler = hdl;
  

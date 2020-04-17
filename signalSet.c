@@ -1,7 +1,14 @@
 #include <stdio.h>
-#include <signal.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <math.h>
 
 volatile sig_atomic_t flag;
 
@@ -10,7 +17,6 @@ void hdl (int signo)
     if (signo == SIGUSR1)
     {
         fprintf(stderr,"Received SIGUSR1! %d\n", getpid());
-        flag = 1;
     }
     else if (signo == SIGUSR2)
     {
@@ -20,10 +26,9 @@ void hdl (int signo)
     {
         fprintf(stderr,"Received SIGTERM! %d\n", getpid());
     }
+
 }
 
-
-void mySigsunpend(int signal);
 void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char option);
 
 int main(void) {
@@ -31,11 +36,11 @@ int main(void) {
     struct sigaction sigact;
 
     signalSet(&sigact, hdl, 0, 'I');
-    signalSet(&sigact, 0, SIGUSR1, 'A');
+    signalSet(&sigact, 0, SIGTERM, 'E');
+    signalSet(&sigact, 0, SIGUSR2, 'E');
+    signalSet(&sigact, 0, SIGUSR1, 'E');
 
-    mySigsunpend(SIGUSR1);
-
-    printf("%d\n", flag);
+    while(1);
 
     return 0;
 }
@@ -46,25 +51,10 @@ void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char opt
         sigact->sa_handler = handler;
         sigact->sa_flags = 0;
         sigfillset(&(sigact->sa_mask));
-    } else if (option == 'A') {
+    } else if (option == 'E') {
         if (sigaction(signal, sigact, NULL) < 0) {
             perror("sigaction()");
             exit(EXIT_FAILURE);
         }
     }
-}
-
-void mySigsunpend(int signal) {
-    
-    sigset_t mask;
-
-    sigfillset(&mask);
-    sigdelset(&mask, signal);
-
-    if (sigprocmask(SIG_SETMASK, &mask, NULL) < 0) {
-        perror("sigprocmask()");
-        exit(EXIT_FAILURE);
-    }
-
-    sigsuspend(&mask);
 }
