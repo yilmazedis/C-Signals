@@ -60,3 +60,12 @@ int main()
 	} 
 	return 0; 
 } 
+/*
+void denseMultiply() {
+	
+	for (int i = 0; i < matrixA_row_count; ++i)
+	    for (int j = 0; j < matrixB_column_count; ++j)
+	        for (int k = 0; k < matrixA_column_count; ++k) {
+	            matrixC[i][j] += matrixA[i][k] * matrixB[k][j];
+	        }
+}*/

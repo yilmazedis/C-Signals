@@ -25,6 +25,7 @@ void freeMatrix(int **matrix, int n);
 char *setCommand(char *command, int **matrix, int n, int x, int y);
 void getMatrixSection(int section, int n, int* x, int* y);
 int **matrixMultiplication(int **matrixA, int **matrixB, int n);
+void myRead(int fd, char *buf);
 
 int main(int argc, char const *argv[]) { 
  	
@@ -109,6 +110,9 @@ void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, 
 	// Free
 	freeMatrix(matrixA, n);
 	freeMatrix(matrixB, n);
+	freeMatrix(matrixC, n);
+
+
 	free(command);
 	free(tempCommand);
 
@@ -167,6 +171,16 @@ int **matrixMultiplication(int **matrixA, int **matrixB, int n) {
 	}
 
 	return matrixC;
+}
+
+void myRead(int fd, char *buf) {
+
+	const size_t perSize = 128;
+	int count = 0;
+
+	while(perSize == read(fd, &buf[count], perSize)) {	
+		count += perSize;
+	}
 }
 
 void getMatrixSection(int section, int n, int* x, int* y) {
@@ -251,7 +265,8 @@ char *setCommand(char *command, int **matrix, int n, int x, int y) {
 	{
 		for (j = 0; j < n / ADDED_SPACE; ++j)
 		{
-			command[cmdIn++] = matrix[x + i][y + j] + 48;
+			//command[cmdIn++] = matrix[x + i][y + j] + 48;
+			command[cmdIn++] = matrix[x + i][y + j];
 			command[cmdIn++] = ' ';
 		}
 	}
@@ -292,7 +307,8 @@ int **fillMatrixFromString(int **matrix, int n, char* command) {
 	{
 		for (j = 0; j < n; ++j)
 		{	
-			matrix[i][j] = (int)((*ptr) - '0');
+			//matrix[i][j] = (int)((*ptr) - '0');
+			matrix[i][j] = (int)(*ptr);
 			ptr = strtok(NULL, delim);
 		}
 	}
@@ -323,7 +339,8 @@ int **fillMatrixFromFile(int **matrix, int n, char* filename) {
 	{
 		for (j = 0; j < n; ++j)
 		{	
-			matrix[i][j] = (int)((*ptr) - '0');
+			//matrix[i][j] = (int)((*ptr) - '0');
+			matrix[i][j] = (int)(*ptr);
 			ptr = strtok(NULL, delim);
 		}
 	}
