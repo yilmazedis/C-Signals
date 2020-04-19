@@ -7,6 +7,8 @@
 #include<fcntl.h>
 
 #define MAX_CHILDREN 4
+#define MATRIX_EDGES 4
+#define ADDED_SPACE 2
 
 void setPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
 void closePipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
@@ -16,14 +18,13 @@ void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char opt
 void CHLDhandler(int sig);
 void INThandler(int sig);
 int **newMatrix(int **matrix, int n);
-int **fillMatrix(int **matrix, int n, char* filename);
+int **fillMatrixFromFile(int **matrix, int n, char* filename);
+int **fillMatrixFromString(int **matrix, int n, char* str);
 void printMatrix(int **matrix, int n);
 void freeMatrix(int **matrix, int n);
 char *setCommand(char *command, int **matrix, int n, int x, int y);
 void getMatrixSection(int section, int n, int* x, int* y);
-
-char input_str[100] = "hello ";
-char fixed_str[] = "forgeeks.org";
+int **matrixMultiplication(int **matrixA, int **matrixB, int n);
 
 int main(int argc, char const *argv[]) { 
  	
@@ -62,92 +63,110 @@ int main(int argc, char const *argv[]) {
 
 void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, char* pathA, char* pathB) {
 
-	char concat_str[MAX_CHILDREN][100]; 
 	int i;
 	pid_t wpid;
 	int status = 0;
-	int **matrixA, **matrixB;
-	char *command;
+	int **matrixA, **matrixB, **matrixC;
+	char *command, *tempCommand;
 	int x, y;
 
+	matrixA = fillMatrixFromFile(newMatrix(matrixA, n), n, pathA);
+	matrixB = fillMatrixFromFile(newMatrix(matrixB, n), n, pathB);
 
-	/************************************/
-
-	matrixA = fillMatrix(newMatrix(matrixA, n), n, pathA);
-	matrixB = fillMatrix(newMatrix(matrixB, n), n, pathB);
-
-	command = (char *) calloc((2 * n) + 1, sizeof(char));
+	command = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	tempCommand = (char *) calloc(n * n * n, sizeof(char));
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
-	{
+	{	
 		getMatrixSection(i, n, &x, &y);
 
 		command = setCommand(command, matrixA, n, x, y);
-		fprintf(stderr, "%s\n", command); 
+		//fprintf(stderr, "A pid %d - %s\n", getpid(), command);
+		write(pipeW[i][1], command, MATRIX_EDGES * n);
 
-		write(pipeW[i][1], command, (2 * n) + 1);
 
+		command = setCommand(command, matrixB, n, x, y);
+		//fprintf(stderr, "B pid %d - %s\n", getpid(), command);
+		write(pipeW[i][1], command, MATRIX_EDGES * n);
 	}
-	
 
-
-	/***********************************/
-	fprintf(stderr, "%s\n", "sdzd");
-	/*
-	for (i = 0; i < MAX_CHILDREN; ++i)
-	{
-		// Write input string and close writing end of first 
-		// pipe. 
-		write(pipeW[i][1], input_str, strlen(input_str)+1); 
-	}
-	*/
 	// Wait All Child
 	while ((wpid = wait(&status)) > 0);
 
-	fprintf(stderr, "%s\n", "sdzd");
-
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{
-		// Read string from child, print it and close 
-		// reading end. 
-		read(pipeR[i][0], command, (2 * n) + 1); 
-		printf("Concatenated string %s\n", command); 
+		read(pipeR[i][0], command, MATRIX_EDGES * n);
+		//printf("%s\n", tempCommand); 
+		sprintf(tempCommand, "%s %s", tempCommand, command);
 	}
 
+	//printf("%s\n", tempCommand); 
+
+	matrixC = fillMatrixFromString(newMatrix(matrixC, n), n, tempCommand);
+
+	printMatrix(matrixC, n);
 
 	// Free
 	freeMatrix(matrixA, n);
 	freeMatrix(matrixB, n);
 	free(command);
-	fprintf(stderr, "%s\n", "sdzd");
+	free(tempCommand);
 
 }	
 
 void children(int pipeR[], int pipeW[], int n) {
 
 	char *command;
+	int **matrixA, **matrixB, **matrixC;
 
-	command = (char *) calloc((2 * n) + 1, sizeof(char));
+	command = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
 
-	// Pipe Read Part
-	read(pipeR[0], command, (2 * n) + 1); 
-	
-	/*
-	sleep(4);
-	// Child Operation Part
-	int k = strlen(concat_str); 
-	int i; 
-	for (i=0; i<strlen(fixed_str); i++) 
-		concat_str[k++] = fixed_str[i]; 
+	// Pipe Read matrixA Part
+	read(pipeR[0], command, MATRIX_EDGES * n);
+	//fprintf(stderr, "A pid %d - %s\n", getpid(), command);
+	matrixA = fillMatrixFromString(newMatrix(matrixA, n / ADDED_SPACE), n / ADDED_SPACE, command);
+	//printMatrix(matrixA, n / 2);
 
-	concat_str[k] = '\0'; // string ends with '\0' 
-	*/
+	// Pipe Read matrixB Part
+	read(pipeR[0], command, MATRIX_EDGES * n);
+	//fprintf(stderr, "B pid %d - %s\n", getpid(), command);
+	matrixB = fillMatrixFromString(newMatrix(matrixB, n / ADDED_SPACE), n / ADDED_SPACE, command);
+	//printMatrix(matrixB, n / 2);
+
+
+	matrixC = matrixMultiplication(matrixA, matrixB, n / ADDED_SPACE);
+
+	command = setCommand(command, matrixC, n, 0, 0);
+	//fprintf(stderr, "C pid %d - %s\n", getpid(), command);
+
 	// Pipe Write Part
-	write(pipeW[1], command, (2 * n) + 1); 
-	
+	write(pipeW[1], command, MATRIX_EDGES * n); 
 
+	//free
 	free(command);
+	freeMatrix(matrixA, n / ADDED_SPACE);
+	freeMatrix(matrixB, n / ADDED_SPACE);
+	freeMatrix(matrixC, n / ADDED_SPACE);
+	
 	exit(0); 
+}
+
+int **matrixMultiplication(int **matrixA, int **matrixB, int n) {
+
+	int **matrixC;
+	int i, j;
+
+	matrixC = newMatrix(matrixC, n);
+
+	for (i = 0; i < n; ++i)
+	{
+		for (j = 0; j < n; ++j)
+		{
+			matrixC[i][j] = matrixA[i][j] + matrixB[i][j];
+		}
+	}
+
+	return matrixC;
 }
 
 void getMatrixSection(int section, int n, int* x, int* y) {
@@ -228,16 +247,16 @@ char *setCommand(char *command, int **matrix, int n, int x, int y) {
 
 	int i, j, cmdIn = 0;
 
-	for (i = 0; i < n / 2; ++i)
+	for (i = 0; i < n / ADDED_SPACE; ++i)
 	{
-		for (j = 0; j < n / 2; ++j)
+		for (j = 0; j < n / ADDED_SPACE; ++j)
 		{
 			command[cmdIn++] = matrix[x + i][y + j] + 48;
 			command[cmdIn++] = ' ';
 		}
 	}
 
-	command[cmdIn] = '\0';
+	command[--cmdIn] = '\0';
 
 	return command;
 }
@@ -256,7 +275,33 @@ int **newMatrix(int **matrix, int n) {
 	return matrix;
 }
 
-int **fillMatrix(int **matrix, int n, char* filename) {
+int **fillMatrixFromString(int **matrix, int n, char* command) {
+	
+	int i, j;
+	char delim[] = " ";
+	char *buffer;
+	char *ptr;
+
+	buffer = (char *) calloc(MATRIX_EDGES * n * ADDED_SPACE, sizeof(char));
+	
+	sprintf(buffer, "%s", command);
+
+	ptr = strtok(buffer, delim);
+
+	for(i = 0; i < n; i++)
+	{
+		for (j = 0; j < n; ++j)
+		{	
+			matrix[i][j] = (int)((*ptr) - '0');
+			ptr = strtok(NULL, delim);
+		}
+	}
+
+	free(buffer);
+	return matrix;
+}
+
+int **fillMatrixFromFile(int **matrix, int n, char* filename) {
 	
 	int fd;
 	int i, j;
