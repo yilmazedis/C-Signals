@@ -9,6 +9,7 @@
 #define MAX_CHILDREN 4
 #define MATRIX_EDGES 4
 #define ADDED_SPACE 2
+#define MAX_SIZE 121
 #define P2_CHILD 0
 #define P3_CHILD 1
 #define P4_CHILD 2
@@ -21,6 +22,11 @@ typedef struct {
 	int pipe_4_5[2], pipe_5_4[2];
 }PipeWBC; // pipe way between child
 
+typedef struct {
+	int matrix[MAX_SIZE][MAX_SIZE];
+	int n;
+}Matrix;
+
 void setParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
 void setChildsPipes(PipeWBC *pipeWBC);
 void closeParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
@@ -30,15 +36,14 @@ void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC);
 void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char option);
 void CHLDhandler(int sig);
 void INThandler(int sig);
-int **newMatrix(int **matrix, int n);
-int **fillMatrixFromFile(int **matrix, int n, char* filename);
-int **fillMatrixFromString(int **matrix, int n, char* str);
-void printMatrix(int **matrix, int n);
+void fillMatrixFromFile(Matrix *matrix, int n, char* filename);
+void printMatrix(Matrix *matrix, int n);
 void freeMatrix(int **matrix, int n);
-char *setCommand(char *command, int **matrix, int n, int x, int y);
+void setCommand(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
 void getMatrixSection(int section, int n, int* x, int* y);
-int **matrixMultiplication(int **matrixA, int **matrixB, int n);
+Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, Matrix matrixTempB, int n, int childnum);
 void myRead(int fd, char *buf);
+void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
 
 int main(int argc, char const *argv[]) { 
  	
@@ -82,168 +87,152 @@ void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, 
 	int i;
 	pid_t wpid;
 	int status = 0;
-	int **matrixA, **matrixB, **matrixC;
-	char *command, *tempCommand;
 	int x, y;
 
-	matrixA = fillMatrixFromFile(newMatrix(matrixA, n), n, pathA);
-	matrixB = fillMatrixFromFile(newMatrix(matrixB, n), n, pathB);
+	Matrix matrixA;
+	Matrix matrixB;
+	Matrix matrixC;
+	Matrix command;
 
-	command = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
-	tempCommand = (char *) calloc(n * n * n, sizeof(char));
+	fillMatrixFromFile(&matrixA, n, pathA);
+	fillMatrixFromFile(&matrixB, n, pathB);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{	
 		getMatrixSection(i, n, &x, &y);
 
-		command = setCommand(command, matrixA, n, x, y);
-		//fprintf(stderr, "A pid %d - %s\n", getpid(), command);
-		write(pipeW[i][1], command, MATRIX_EDGES * n);
+		setCommand(&command ,&matrixA, n, x, y);
+		write(pipeW[i][1], &command, sizeof(Matrix));
 
-
-		command = setCommand(command, matrixB, n, x, y);
-		//fprintf(stderr, "B pid %d - %s\n", getpid(), command);
-		write(pipeW[i][1], command, MATRIX_EDGES * n);
+		setCommand(&command ,&matrixB, n, x, y);
+		write(pipeW[i][1], &command, sizeof(Matrix));
 	}
+
 
 	// Wait All Child
 	while ((wpid = wait(&status)) > 0);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{
-		read(pipeR[i][0], command, MATRIX_EDGES * n);
-		//printf("%s\n", tempCommand); 
-		sprintf(tempCommand, "%s %s", tempCommand, command);
+		read(pipeR[i][0], &command, sizeof(Matrix));
+
+		getMatrixSection(i, n, &x, &y);
+
+		conductMatrix(&matrixC, &command, n / ADDED_SPACE, x, y);
+		
 	}
 
-	//printf("%s\n", tempCommand); 
-
-	matrixC = fillMatrixFromString(newMatrix(matrixC, n), n, tempCommand);
-
-	printMatrix(matrixC, n);
-
-	// Free
-	freeMatrix(matrixA, n);
-	freeMatrix(matrixB, n);
-	freeMatrix(matrixC, n);
-
-
-	free(command);
-	free(tempCommand);
+	printMatrix(&matrixC, n);
 
 }	
 
 void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC) {
 
-	char *commandC, *commandA, *commandB;
-	char *commandTempA, *commandTempB;
-	int **matrixA, **matrixB, **matrixC;
-
-	commandA = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
-	commandB = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
-	commandC = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
-
-	commandTempA = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
-	commandTempB = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	Matrix matrixA, matrixTempA;
+	Matrix matrixB, matrixTempB;
+	Matrix matrixC;
 
 	// Pipe Read matrixA Part
-	read(pipeR[0], commandA, MATRIX_EDGES * n);
-	//fprintf(stderr, "A pid %d - %s\n", getpid(), commandA);
-	matrixA = fillMatrixFromString(newMatrix(matrixA, n / ADDED_SPACE), n / ADDED_SPACE, commandA);
-	//printMatrix(matrixA, n / 2);
+	read(pipeR[0], &matrixA, sizeof(Matrix));
+
 
 	// Pipe Read matrixB Part
-	read(pipeR[0], commandB, MATRIX_EDGES * n);
-	//fprintf(stderr, "B pid %d - %s\n", getpid(), commandB);
-	matrixB = fillMatrixFromString(newMatrix(matrixB, n / ADDED_SPACE), n / ADDED_SPACE, commandB);
-	//printMatrix(matrixB, n / 2);
-
+	read(pipeR[0], &matrixB, sizeof(Matrix));
 
 	// pipe_2_4, pipe_4_2
 	// pipe_2_3, pipe_3_2
 	// pipe_3_5, pipe_5_3
 	// pipe_4_5, pipe_5_4
 
-	
 	if (childnum == P2_CHILD) {
 		
-		write(pipeWBC->pipe_2_3[1], commandA, MATRIX_EDGES * n);
-		write(pipeWBC->pipe_2_4[1], commandB, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_2_3[1], &matrixA, sizeof(Matrix));
+		write(pipeWBC->pipe_2_4[1], &matrixB, sizeof(Matrix));
 
-		read(pipeWBC->pipe_3_2[0], commandTempA, MATRIX_EDGES * n);
-		read(pipeWBC->pipe_4_2[0], commandTempB, MATRIX_EDGES * n);
-
-		fprintf(stderr, "childnum %d\n", childnum);
+		read(pipeWBC->pipe_3_2[0], &matrixTempA, sizeof(Matrix));
+		read(pipeWBC->pipe_4_2[0], &matrixTempB, sizeof(Matrix));
 	
 	} else if (childnum == P3_CHILD) {
 		
-		write(pipeWBC->pipe_3_2[1], commandA, MATRIX_EDGES * n);
-		write(pipeWBC->pipe_3_5[1], commandB, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_3_2[1], &matrixA, sizeof(Matrix));
+		write(pipeWBC->pipe_3_5[1], &matrixB, sizeof(Matrix));
 
-		read(pipeWBC->pipe_2_3[0], commandTempA, MATRIX_EDGES * n);
-		read(pipeWBC->pipe_5_3[0], commandTempB, MATRIX_EDGES * n);
-
-		fprintf(stderr, "childnum %d\n", childnum);
+		read(pipeWBC->pipe_2_3[0], &matrixTempA, sizeof(Matrix));
+		read(pipeWBC->pipe_5_3[0], &matrixTempB, sizeof(Matrix));
 
 	}else if (childnum == P4_CHILD) {
 		
-		write(pipeWBC->pipe_4_5[1], commandA, MATRIX_EDGES * n);
-		write(pipeWBC->pipe_4_2[1], commandB, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_4_5[1], &matrixA, sizeof(Matrix));
+		write(pipeWBC->pipe_4_2[1], &matrixB, sizeof(Matrix));
 
-		read(pipeWBC->pipe_5_4[0], commandTempA, MATRIX_EDGES * n);
-		read(pipeWBC->pipe_2_4[0], commandTempB, MATRIX_EDGES * n);
-
-		fprintf(stderr, "childnum %d\n", childnum);
+		read(pipeWBC->pipe_5_4[0], &matrixTempA, sizeof(Matrix));
+		read(pipeWBC->pipe_2_4[0], &matrixTempB, sizeof(Matrix));
 
 	}else if (childnum == P5_CHILD) {
 		
-		write(pipeWBC->pipe_5_4[1], commandA, MATRIX_EDGES * n);
-		write(pipeWBC->pipe_5_3[1], commandB, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_5_4[1], &matrixA, sizeof(Matrix));
+		write(pipeWBC->pipe_5_3[1], &matrixB, sizeof(Matrix));
 
-		read(pipeWBC->pipe_4_5[0], commandTempA, MATRIX_EDGES * n);
-		read(pipeWBC->pipe_3_5[0], commandTempB, MATRIX_EDGES * n);
-
-		fprintf(stderr, "childnum %d\n", childnum);
+		read(pipeWBC->pipe_4_5[0], &matrixTempA, sizeof(Matrix));
+		read(pipeWBC->pipe_3_5[0], &matrixTempB, sizeof(Matrix));
 	}
 
+	matrixC = matrixMultiplication(matrixA, matrixB, matrixTempA, matrixTempB, n / ADDED_SPACE, childnum);
 
-	matrixC = matrixMultiplication(matrixA, matrixB, n / ADDED_SPACE);
-
-	commandC = setCommand(commandC, matrixC, n, 0, 0);
-	//fprintf(stderr, "C pid %d - %s\n", getpid(), commandC);
 
 	// Pipe Write Part
-	write(pipeW[1], commandC, MATRIX_EDGES * n); 
-
-	//free
-	free(commandC);
-	free(commandA);
-	free(commandB);
-	free(commandTempA);
-	free(commandTempB);
-	freeMatrix(matrixA, n / ADDED_SPACE);
-	freeMatrix(matrixB, n / ADDED_SPACE);
-	freeMatrix(matrixC, n / ADDED_SPACE);
+	write(pipeW[1], &matrixC, sizeof(Matrix)); 
 	
 	exit(0); 
 }
 
-int **matrixMultiplication(int **matrixA, int **matrixB, int n) {
+Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, Matrix matrixTempB, int n, int childnum) {
 
-	int **matrixC;
+	Matrix matrixC;
+	int i, j, k;
+
+
+	for (i = 0; i < n; ++i)
+	    for (j = 0; j < n; ++j)
+	        for (k = 0; k < n; ++k) {
+	        	if (childnum == P2_CHILD) {
+
+	        		matrixC.matrix[i][j] += (matrixA.matrix[i][k] * matrixB.matrix[k][j]) + 
+	        		(matrixTempA.matrix[i][k] * matrixTempB.matrix[k][j]);
+	        	
+	        	} else if (childnum == P3_CHILD) {
+	        	
+	        		matrixC.matrix[i][j] += (matrixA.matrix[i][k] * matrixTempB.matrix[k][j]) + 
+	        		(matrixTempA.matrix[i][k] * matrixB.matrix[k][j]);
+	        	
+	        	} else if (childnum == P4_CHILD) {
+	        	
+	        		matrixC.matrix[i][j] += (matrixA.matrix[i][k] * matrixTempB.matrix[k][j]) + 
+	        		(matrixTempA.matrix[i][k] * matrixB.matrix[k][j]);
+	        	
+	        	} else if (childnum == P5_CHILD) {
+	        	
+	        		matrixC.matrix[i][j] += (matrixA.matrix[i][k] * matrixB.matrix[k][j]) + 
+	        		(matrixTempA.matrix[i][k] * matrixTempB.matrix[k][j]);
+	        	
+	        	}
+	        }
+
+	return matrixC;
+}
+
+void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y) {
+
 	int i, j;
-
-	matrixC = newMatrix(matrixC, n);
 
 	for (i = 0; i < n; ++i)
 	{
 		for (j = 0; j < n; ++j)
 		{
-			matrixC[i][j] = matrixA[i][j] + matrixB[i][j];
+			matrixTarget->matrix[i + x][j + y] = matrixSource->matrix[i][j];
 		}
 	}
 
-	return matrixC;
 }
 
 void myRead(int fd, char *buf) {
@@ -406,67 +395,21 @@ void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char opt
     }
 }
 
-char *setCommand(char *command, int **matrix, int n, int x, int y) {
+void setCommand(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y) {
 
-	int i, j, cmdIn = 0;
+	int i, j;
 
 	for (i = 0; i < n / ADDED_SPACE; ++i)
 	{
 		for (j = 0; j < n / ADDED_SPACE; ++j)
 		{
-			//command[cmdIn++] = matrix[x + i][y + j] + 48;
-			command[cmdIn++] = matrix[x + i][y + j];
-			command[cmdIn++] = ' ';
+			matrixTarget->matrix[i][j] = matrixSource->matrix[x + i][y + j];
 		}
 	}
-
-	command[--cmdIn] = '\0';
-
-	return command;
 }
 
-int **newMatrix(int **matrix, int n) {
 
-	int i;
-
-	matrix = (int **) calloc(n, sizeof(int*));
-	
-	for (i = 0; i < n; ++i)
-	{
-		matrix[i] = (int *) calloc(n, sizeof(int));
-	}
-
-	return matrix;
-}
-
-int **fillMatrixFromString(int **matrix, int n, char* command) {
-	
-	int i, j;
-	char delim[] = " ";
-	char *buffer;
-	char *ptr;
-
-	buffer = (char *) calloc(MATRIX_EDGES * n * ADDED_SPACE, sizeof(char));
-	
-	sprintf(buffer, "%s", command);
-
-	ptr = strtok(buffer, delim);
-
-	for(i = 0; i < n; i++)
-	{
-		for (j = 0; j < n; ++j)
-		{	
-			//matrix[i][j] = (int)((*ptr) - '0');
-			matrix[i][j] = (int)(*ptr);
-			ptr = strtok(NULL, delim);
-		}
-	}
-
-	free(buffer);
-	return matrix;
-}
-
-int **fillMatrixFromFile(int **matrix, int n, char* filename) {
+void fillMatrixFromFile(Matrix *matrix, int n, char* filename) {
 	
 	int fd;
 	int i, j;
@@ -488,16 +431,14 @@ int **fillMatrixFromFile(int **matrix, int n, char* filename) {
 	{
 		for (j = 0; j < n; ++j)
 		{	
-			//matrix[i][j] = (int)((*ptr) - '0');
-			matrix[i][j] = (int)(*ptr);
+			//matrix->matrix[i][j] = (int)((*ptr) - '0');
+			matrix->matrix[i][j] = (int)(*ptr);
 			ptr = strtok(NULL, delim);
 		}
 	}
-
-	return matrix;
 }
 
-void printMatrix(int **matrix, int n) {
+void printMatrix(Matrix *matrix, int n){
 	int i, j;
 
 	for(i = 0; i < n; i++)
@@ -505,7 +446,7 @@ void printMatrix(int **matrix, int n) {
 		for (j = 0; j < n; ++j)
 		{
 			
-			fprintf(stderr, "%d ", matrix[i][j]);
+			fprintf(stderr, "%d ", matrix->matrix[i][j]);
 		}
 		fprintf(stderr, "\n");
 	}
