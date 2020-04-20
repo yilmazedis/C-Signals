@@ -9,11 +9,24 @@
 #define MAX_CHILDREN 4
 #define MATRIX_EDGES 4
 #define ADDED_SPACE 2
+#define P2_CHILD 0
+#define P3_CHILD 1
+#define P4_CHILD 2
+#define P5_CHILD 3
 
-void setPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
-void closePipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
+typedef struct {
+	int pipe_2_4[2], pipe_4_2[2];
+	int pipe_2_3[2], pipe_3_2[2];
+	int pipe_3_5[2], pipe_5_3[2];
+	int pipe_4_5[2], pipe_5_4[2];
+}PipeWBC; // pipe way between child
+
+void setParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
+void setChildsPipes(PipeWBC *pipeWBC);
+void closeParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
+void closeChildsPipes(PipeWBC *pipeWBC);
 void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, char* pathA, char* pathB);
-void children(int pipeR[], int pipeW[], int n);
+void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC);
 void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char option);
 void CHLDhandler(int sig);
 void INThandler(int sig);
@@ -31,9 +44,9 @@ int main(int argc, char const *argv[]) {
  	
  	struct sigaction sigact;
 	pid_t chldPid[MAX_CHILDREN]; 
-	int i;
+	int i, n = 8;
 	int pipeW[MAX_CHILDREN][2], pipeR[MAX_CHILDREN][2];
-	int n = 8;
+	PipeWBC pipeWBC;
 	char *pathA = "fileA.txt";
 	char *pathB = "fileB.txt";
 
@@ -41,7 +54,8 @@ int main(int argc, char const *argv[]) {
     //signalSet(&sigact, 0, SIGCHLD, 'A');
     signalSet(&sigact, INThandler, SIGINT, 'A');
 
-	setPipes(pipeR, pipeW, MAX_CHILDREN); 
+	setParentPipes(pipeR, pipeW, MAX_CHILDREN);
+	setChildsPipes(&pipeWBC);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{
@@ -50,7 +64,7 @@ int main(int argc, char const *argv[]) {
 		if (chldPid[i] == 0) {
 			// !!Children pipe parameters 
 			// have been have to put reverse order.
-			children(pipeW[i], pipeR[i], n);
+			children(pipeW[i], pipeR[i], n, i, &pipeWBC);
 		} else if (chldPid[i] < 0) {
 			fprintf(stderr, "fork %d Failed", i); 
 			return 1; 
@@ -59,7 +73,8 @@ int main(int argc, char const *argv[]) {
 	
 	parent(chldPid, pipeR, pipeW, n, pathA, pathB);
 
-	closePipes(pipeR, pipeW, MAX_CHILDREN);
+	closeParentPipes(pipeR, pipeW, MAX_CHILDREN);
+	closeChildsPipes(&pipeWBC);
 }
 
 void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, char* pathA, char* pathB) {
@@ -118,36 +133,94 @@ void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, 
 
 }	
 
-void children(int pipeR[], int pipeW[], int n) {
+void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC) {
 
-	char *command;
+	char *commandC, *commandA, *commandB;
+	char *commandTempA, *commandTempB;
 	int **matrixA, **matrixB, **matrixC;
 
-	command = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	commandA = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	commandB = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	commandC = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+
+	commandTempA = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
+	commandTempB = (char *) calloc(MATRIX_EDGES * n, sizeof(char));
 
 	// Pipe Read matrixA Part
-	read(pipeR[0], command, MATRIX_EDGES * n);
-	//fprintf(stderr, "A pid %d - %s\n", getpid(), command);
-	matrixA = fillMatrixFromString(newMatrix(matrixA, n / ADDED_SPACE), n / ADDED_SPACE, command);
+	read(pipeR[0], commandA, MATRIX_EDGES * n);
+	//fprintf(stderr, "A pid %d - %s\n", getpid(), commandA);
+	matrixA = fillMatrixFromString(newMatrix(matrixA, n / ADDED_SPACE), n / ADDED_SPACE, commandA);
 	//printMatrix(matrixA, n / 2);
 
 	// Pipe Read matrixB Part
-	read(pipeR[0], command, MATRIX_EDGES * n);
-	//fprintf(stderr, "B pid %d - %s\n", getpid(), command);
-	matrixB = fillMatrixFromString(newMatrix(matrixB, n / ADDED_SPACE), n / ADDED_SPACE, command);
+	read(pipeR[0], commandB, MATRIX_EDGES * n);
+	//fprintf(stderr, "B pid %d - %s\n", getpid(), commandB);
+	matrixB = fillMatrixFromString(newMatrix(matrixB, n / ADDED_SPACE), n / ADDED_SPACE, commandB);
 	//printMatrix(matrixB, n / 2);
+
+
+	// pipe_2_4, pipe_4_2
+	// pipe_2_3, pipe_3_2
+	// pipe_3_5, pipe_5_3
+	// pipe_4_5, pipe_5_4
+
+	
+	if (childnum == P2_CHILD) {
+		
+		write(pipeWBC->pipe_2_3[1], commandA, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_2_4[1], commandB, MATRIX_EDGES * n);
+
+		read(pipeWBC->pipe_3_2[0], commandTempA, MATRIX_EDGES * n);
+		read(pipeWBC->pipe_4_2[0], commandTempB, MATRIX_EDGES * n);
+
+		fprintf(stderr, "childnum %d\n", childnum);
+	
+	} else if (childnum == P3_CHILD) {
+		
+		write(pipeWBC->pipe_3_2[1], commandA, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_3_5[1], commandB, MATRIX_EDGES * n);
+
+		read(pipeWBC->pipe_2_3[0], commandTempA, MATRIX_EDGES * n);
+		read(pipeWBC->pipe_5_3[0], commandTempB, MATRIX_EDGES * n);
+
+		fprintf(stderr, "childnum %d\n", childnum);
+
+	}else if (childnum == P4_CHILD) {
+		
+		write(pipeWBC->pipe_4_5[1], commandA, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_4_2[1], commandB, MATRIX_EDGES * n);
+
+		read(pipeWBC->pipe_5_4[0], commandTempA, MATRIX_EDGES * n);
+		read(pipeWBC->pipe_2_4[0], commandTempB, MATRIX_EDGES * n);
+
+		fprintf(stderr, "childnum %d\n", childnum);
+
+	}else if (childnum == P5_CHILD) {
+		
+		write(pipeWBC->pipe_5_4[1], commandA, MATRIX_EDGES * n);
+		write(pipeWBC->pipe_5_3[1], commandB, MATRIX_EDGES * n);
+
+		read(pipeWBC->pipe_4_5[0], commandTempA, MATRIX_EDGES * n);
+		read(pipeWBC->pipe_3_5[0], commandTempB, MATRIX_EDGES * n);
+
+		fprintf(stderr, "childnum %d\n", childnum);
+	}
 
 
 	matrixC = matrixMultiplication(matrixA, matrixB, n / ADDED_SPACE);
 
-	command = setCommand(command, matrixC, n, 0, 0);
-	//fprintf(stderr, "C pid %d - %s\n", getpid(), command);
+	commandC = setCommand(commandC, matrixC, n, 0, 0);
+	//fprintf(stderr, "C pid %d - %s\n", getpid(), commandC);
 
 	// Pipe Write Part
-	write(pipeW[1], command, MATRIX_EDGES * n); 
+	write(pipeW[1], commandC, MATRIX_EDGES * n); 
 
 	//free
-	free(command);
+	free(commandC);
+	free(commandA);
+	free(commandB);
+	free(commandTempA);
+	free(commandTempB);
 	freeMatrix(matrixA, n / ADDED_SPACE);
 	freeMatrix(matrixB, n / ADDED_SPACE);
 	freeMatrix(matrixC, n / ADDED_SPACE);
@@ -205,7 +278,60 @@ void getMatrixSection(int section, int n, int* x, int* y) {
 	}
 }
 
-void setPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
+void setChildsPipes(PipeWBC *pipeWBC) {
+
+	if (pipe(pipeWBC->pipe_2_4) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_2_4 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_2_3) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_2_3 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_3_5) == -1)
+	{ 
+			fprintf(stderr, "Pipe_3_5 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_4_5) == -1)
+	{ 
+			fprintf(stderr, "Pipe_4_5 Read Failed"); 
+			exit(1);
+	}
+
+	/////
+
+	if (pipe(pipeWBC->pipe_4_2) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_2_4 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_3_2) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_2_3 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_5_3) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_3_5 Read Failed"); 
+			exit(1);
+	}
+
+	if (pipe(pipeWBC->pipe_5_4) == -1) 
+	{ 
+			fprintf(stderr, "Pipe_4_5 Read Failed"); 
+			exit(1);
+	}
+}
+
+void setParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
 
 	int i;
 
@@ -225,7 +351,30 @@ void setPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
 	}
 }
 
-void closePipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
+void closeChildsPipes(PipeWBC *pipeWBC) {
+
+	// Close reads
+	close(pipeWBC->pipe_2_4[0]);
+	close(pipeWBC->pipe_4_2[0]);
+	close(pipeWBC->pipe_2_3[0]);
+	close(pipeWBC->pipe_3_2[0]);
+	close(pipeWBC->pipe_3_5[0]);
+	close(pipeWBC->pipe_5_3[0]);
+	close(pipeWBC->pipe_4_5[0]);
+	close(pipeWBC->pipe_5_4[0]);
+
+	// Close writes
+	close(pipeWBC->pipe_2_4[1]);
+	close(pipeWBC->pipe_4_2[1]);
+	close(pipeWBC->pipe_2_3[1]);
+	close(pipeWBC->pipe_3_2[1]);
+	close(pipeWBC->pipe_3_5[1]);
+	close(pipeWBC->pipe_5_3[1]);
+	close(pipeWBC->pipe_4_5[1]);
+	close(pipeWBC->pipe_5_4[1]);
+}
+
+void closeParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
 
 	int i;
 
