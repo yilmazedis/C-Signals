@@ -45,7 +45,7 @@ Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, 
 void myRead(int fd, char *buf);
 void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
 
-int main(int argc, char *argv[]) { 
+int main(int argc, char const *argv[]) { 
  	
  	struct sigaction sigact;
 	pid_t chldPid[MAX_CHILDREN]; 
@@ -275,7 +275,7 @@ void setChildsPipes(PipeWBC *pipeWBC) {
 			exit(1);
 	}
 
-	if (pipe(pip->pipe_2_3) == -1) 
+	if (pipe(pipeWBC->pipe_2_3) == -1) 
 	{ 
 			fprintf(stderr, "Pipe_2_3 Read Failed"); 
 			exit(1);
