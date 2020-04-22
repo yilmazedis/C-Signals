@@ -21,7 +21,10 @@ int main(int argc, char const *argv[])
 	int x, y;
 
 	matrixA = fillMatrix(newMatrix(matrixA, n), n, "fileA.txt");
-	matrixB = fillMatrix(newMatrix(matrixB, n), n, "fileB.txt");	
+	matrixB = fillMatrix(newMatrix(matrixB, n), n, "fileB.txt");
+
+	printMatrix(matrixA,n);	
+	printMatrix(matrixB,n);	
 
 	x = 0;
 	y = 0;
@@ -109,7 +112,7 @@ int **fillMatrix(int **matrix, int n, char* filename) {
 	{
 		for (j = 0; j < n; ++j)
 		{	
-			matrix[i][j] = (int)((*ptr) - '0');
+			matrix[i][j] = (int)((*ptr));
 			ptr = strtok(NULL, delim);
 		}
 	}

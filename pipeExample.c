@@ -45,7 +45,7 @@ Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, 
 void myRead(int fd, char *buf);
 void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
 
-int main(int argc, char const *argv[]) { 
+int main(int argc, char *argv[]) { 
  	
  	struct sigaction sigact;
 	pid_t chldPid[MAX_CHILDREN]; 

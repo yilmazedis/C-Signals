@@ -22,6 +22,37 @@ static char *rand_string(char *str, size_t size)
     return str;
 }
 
+int **fillMatrixFromFile(int **matrix, int n, char* filename) {
+	
+	int fd;
+	int i, j;
+	char buffer[1024];
+	char delim[] = " \n";
+
+	fd = open(filename, O_RDONLY); 
+
+	if (fd < 0) { 
+		perror("not opened"); 
+		exit(1);
+	}
+
+	read(fd, buffer, sizeof(buffer));
+
+	char *ptr = strtok(buffer, delim);
+
+	for(i = 0; i < n; i++)
+	{
+		for (j = 0; j < n; ++j)
+		{	
+			//matrix[i][j] = (int)((*ptr) - '0');
+			matrix[i][j] = (int)(*ptr);
+			ptr = strtok(NULL, delim);
+		}
+	}
+
+	return matrix;
+}
+
 
 void myRead(int fd, char *buf) {
 
