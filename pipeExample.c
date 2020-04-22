@@ -275,7 +275,7 @@ void setChildsPipes(PipeWBC *pipeWBC) {
 			exit(1);
 	}
 
-	if (pipe(pipeWBC->pipe_2_3) == -1) 
+	if (pipe(pip->pipe_2_3) == -1) 
 	{ 
 			fprintf(stderr, "Pipe_2_3 Read Failed"); 
 			exit(1);

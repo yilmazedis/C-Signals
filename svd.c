@@ -1,3 +1,5 @@
+// http://www.mymathlib.com/c_source/matrices/linearsystems/singular_value_decomposition.c
+
 ////////////////////////////////////////////////////////////////////////////////
 // File: singular_value_decomposition.c                                       //
 // Contents:                                                                  //
