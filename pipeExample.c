@@ -5,6 +5,7 @@
 #include<string.h> 
 #include<sys/wait.h>
 #include<fcntl.h>
+#include"svd.h"
 
 #define MAX_CHILDREN 4
 #define MATRIX_EDGES 4
@@ -36,7 +37,7 @@ void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC);
 void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char option);
 void CHLDhandler(int sig);
 void INThandler(int sig);
-void fillMatrixFromFile(Matrix *matrix, int n, char* filename);
+int fillMatrixFromFile(Matrix *matrix, int n, char* filename);
 void printMatrix(Matrix *matrix, int n);
 void freeMatrix(int **matrix, int n);
 void setCommand(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
@@ -44,23 +45,20 @@ void getMatrixSection(int section, int n, int* x, int* y);
 Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, Matrix matrixTempB, int n, int childnum);
 void myRead(int fd, char *buf);
 void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
-void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n);
+void userControl(int argc, char *argv[], char *pathA[], char *pathB[], int *n);
+int charCheck(Matrix *matrix, int n);
 
 int main(int argc, char *argv[]) { 
  	
- 	PipeWBC pipeWBC;
  	struct sigaction sigact;
 	pid_t chldPid[MAX_CHILDREN]; 
-	int p2cPipe[MAX_CHILDREN][2], i, n;
-	char *pathA *pathB;
-	
-	userControl(argc, argv, pathA, pathB, &n);
+	int i, n;
+	int p2cPipe[MAX_CHILDREN][2];
+	PipeWBC pipeWBC;
+	char *pathA;
+	char *pathB;
 
-	fprintf(stderr, "%s\n", pathA);
-	fprintf(stderr, "%s\n", pathB);
-	fprintf(stderr, "%d\n", n);
-
-	//return 0;
+	userControl(argc, argv, &pathA, &pathB, &n);
 
 	signalSet(&sigact, CHLDhandler, 0, 'I');
     signalSet(&sigact, CHLDhandler, SIGCHLD, 'A');
@@ -82,6 +80,7 @@ int main(int argc, char *argv[]) {
 			return 1; 
 		}
 	}
+	
 	parent(chldPid, p2cPipe, n, pathA, pathB);
 
 	closeParentPipes(p2cPipe, MAX_CHILDREN);
@@ -90,18 +89,30 @@ int main(int argc, char *argv[]) {
 
 void parent(pid_t chldPid[MAX_CHILDREN], int p2cPipe[][2], int n, char* pathA, char* pathB) {
 
-	int i;
+	int i, err;
 	pid_t wpid;
 	int status = 0;
 	int x, y;
+	double U[n][n];                                                        
+	double V[n][n];                                                     
+	double singular_values[n];
+	double *dummy_array;
+	double source[n][n];
 
 	Matrix matrixA;
 	Matrix matrixB;
 	Matrix matrixC;
 	Matrix command;
 
-	fillMatrixFromFile(&matrixA, n, pathA);
-	fillMatrixFromFile(&matrixB, n, pathB);
+	if (fillMatrixFromFile(&matrixA, n, pathA) != 1) {
+		fprintf(stderr, "%s has unknown character\n", pathA);
+		exit(1);
+	}
+
+	if (fillMatrixFromFile(&matrixB, n, pathB) != 1){
+		fprintf(stderr, "%s has unknown character\n", pathB);
+		exit(1);
+	}
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{	
@@ -113,10 +124,6 @@ void parent(pid_t chldPid[MAX_CHILDREN], int p2cPipe[][2], int n, char* pathA, c
 		setCommand(&command ,&matrixB, n, x, y);
 		write(p2cPipe[i][1], &command, sizeof(Matrix));
 	}
-
-
-	// Wait All Child
-	//while ((wpid = wait(&status)) > 0);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{
@@ -130,6 +137,29 @@ void parent(pid_t chldPid[MAX_CHILDREN], int p2cPipe[][2], int n, char* pathA, c
 
 	printMatrix(&matrixC, n);
 
+	for (i = 0; i < n; ++i)
+	{
+		for (int j = 0; j < n; ++j)
+		{
+			source[i][j] = (double)matrixC.matrix[i][j];
+		}
+	}
+
+	dummy_array = (double*) malloc(n * sizeof(double));                    
+
+	err = Singular_Value_Decomposition((double*) source, n, n, (double*) U, singular_values, (double*) V, dummy_array);   
+                                                     
+	if (err < 0) {
+		fprintf(stderr, " Failed to converge\n");                          
+	} else { 
+		fprintf(stderr, " The singular value decomposition of A is \n");
+		for (int i = 0; i < n; ++i)
+		{
+			fprintf(stderr, "%lf\n", singular_values[i]);
+		}
+	}
+
+	free(dummy_array);
 }	
 
 void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC) {
@@ -144,11 +174,6 @@ void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC) {
 
 	// Pipe Read matrixB Part
 	read(p2cPipe[0], &matrixB, sizeof(Matrix));
-
-	// pipe_2_4, pipe_4_2
-	// pipe_2_3, pipe_3_2
-	// pipe_3_5, pipe_5_3
-	// pipe_4_5, pipe_5_4
 
 	if (childnum == P2_CHILD) {
 		
@@ -185,7 +210,6 @@ void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC) {
 
 	matrixC = matrixMultiplication(matrixA, matrixB, matrixTempA, matrixTempB, n / ADDED_SPACE, childnum);
 
-
 	// Pipe Write Part
 	write(p2cPipe[1], &matrixC, sizeof(Matrix)); 
 	
@@ -196,7 +220,6 @@ Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, 
 
 	Matrix matrixC;
 	int i, j, k;
-
 
 	for (i = 0; i < n; ++i)
 	    for (j = 0; j < n; ++j)
@@ -241,7 +264,7 @@ void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int
 
 }
 
-void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n) {
+void userControl(int argc, char *argv[], char *pathA[], char* pathB[], int *n) {
 
 	int opt;
 
@@ -257,12 +280,12 @@ void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n) {
 	    switch(opt)  
 	    {    
 	        case 'i':  
-	            pathA = (char *) malloc(strlen(optarg)+1);
-	            strcpy(pathA, optarg);  
+	            *pathA = (char *) malloc(strlen(optarg)+1);
+	            strcpy(*pathA, optarg);  
 	            break;
 	        case 'o':  
-	            pathB = (char *) malloc(strlen(optarg)+1);
-	            strcpy(pathB, optarg);  
+	            *pathB = (char *) malloc(strlen(optarg)+1);
+	            strcpy(*pathB, optarg);  
 	            break; 
 	        case 'n':  
 	            sscanf(optarg, "%d", n);
@@ -280,6 +303,23 @@ void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n) {
 	            break;  
 	    }  
 	}
+}
+
+int charCheck(Matrix *matrix, int n) {
+
+	int i, j;
+
+	for (i = 0; i < n; ++i)
+	{
+		for (j = 0; j < n; ++j)
+		{
+			if (matrix->matrix[i][j] > 255 || matrix->matrix[i][j] < 0) {
+				return 0;
+			}
+		}
+	}
+
+	return 1;
 }
 
 void myRead(int fd, char *buf) {
@@ -448,7 +488,7 @@ void setCommand(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y)
 }
 
 
-void fillMatrixFromFile(Matrix *matrix, int n, char* filename) {
+int fillMatrixFromFile(Matrix *matrix, int n, char* filename) {
 	
 	int fd;
 	int i, j;
@@ -474,6 +514,8 @@ void fillMatrixFromFile(Matrix *matrix, int n, char* filename) {
 			ptr = strtok(NULL, delim);
 		}
 	}
+
+	return charCheck(matrix, n);
 }
 
 void printMatrix(Matrix *matrix, int n){
@@ -490,17 +532,6 @@ void printMatrix(Matrix *matrix, int n){
 	}
 
 	fprintf(stderr, "\n");
-}
-
-void freeMatrix(int **matrix, int n) {
-
-	int i;
-
-	for (i = 0; i < n; ++i)
-	{
-		free(matrix[i]);
-	}
-	free(matrix);
 }
 
 void CHLDhandler(int sig) {
