@@ -27,12 +27,12 @@ typedef struct {
 	int n;
 }Matrix;
 
-void setParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
+void setParentPipes(int p2cPipe[][2], int pipeNumber);
 void setChildsPipes(PipeWBC *pipeWBC);
-void closeParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber);
+void closeParentPipes(int p2cPipe[][2], int pipeNumber);
 void closeChildsPipes(PipeWBC *pipeWBC);
-void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, char* pathA, char* pathB);
-void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC);
+void parent(pid_t chldPid[MAX_CHILDREN], int p2cPipe[][2], int n, char* pathA, char* pathB);
+void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC);
 void signalSet(struct sigaction *sigact, void (*handler)(), int signal, char option);
 void CHLDhandler(int sig);
 void INThandler(int sig);
@@ -44,22 +44,29 @@ void getMatrixSection(int section, int n, int* x, int* y);
 Matrix matrixMultiplication(Matrix matrixA, Matrix matrixB, Matrix matrixTempA, Matrix matrixTempB, int n, int childnum);
 void myRead(int fd, char *buf);
 void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int y);
+void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n);
 
-int main(int argc, char const *argv[]) { 
+int main(int argc, char *argv[]) { 
  	
+ 	PipeWBC pipeWBC;
  	struct sigaction sigact;
 	pid_t chldPid[MAX_CHILDREN]; 
-	int i, n = 8;
-	int pipeW[MAX_CHILDREN][2], pipeR[MAX_CHILDREN][2];
-	PipeWBC pipeWBC;
-	char *pathA = "fileA.txt";
-	char *pathB = "fileB.txt";
+	int p2cPipe[MAX_CHILDREN][2], i, n;
+	char *pathA *pathB;
+	
+	userControl(argc, argv, pathA, pathB, &n);
+
+	fprintf(stderr, "%s\n", pathA);
+	fprintf(stderr, "%s\n", pathB);
+	fprintf(stderr, "%d\n", n);
+
+	//return 0;
 
 	signalSet(&sigact, CHLDhandler, 0, 'I');
-    //signalSet(&sigact, 0, SIGCHLD, 'A');
+    signalSet(&sigact, CHLDhandler, SIGCHLD, 'A');
     signalSet(&sigact, INThandler, SIGINT, 'A');
 
-	setParentPipes(pipeR, pipeW, MAX_CHILDREN);
+	setParentPipes(p2cPipe, MAX_CHILDREN);
 	setChildsPipes(&pipeWBC);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
@@ -69,20 +76,19 @@ int main(int argc, char const *argv[]) {
 		if (chldPid[i] == 0) {
 			// !!Children pipe parameters 
 			// have been have to put reverse order.
-			children(pipeW[i], pipeR[i], n, i, &pipeWBC);
+			children(p2cPipe[i], n, i, &pipeWBC);
 		} else if (chldPid[i] < 0) {
 			fprintf(stderr, "fork %d Failed", i); 
 			return 1; 
 		}
 	}
-	
-	parent(chldPid, pipeR, pipeW, n, pathA, pathB);
+	parent(chldPid, p2cPipe, n, pathA, pathB);
 
-	closeParentPipes(pipeR, pipeW, MAX_CHILDREN);
+	closeParentPipes(p2cPipe, MAX_CHILDREN);
 	closeChildsPipes(&pipeWBC);
 }
 
-void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, char* pathA, char* pathB) {
+void parent(pid_t chldPid[MAX_CHILDREN], int p2cPipe[][2], int n, char* pathA, char* pathB) {
 
 	int i;
 	pid_t wpid;
@@ -102,19 +108,19 @@ void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, 
 		getMatrixSection(i, n, &x, &y);
 
 		setCommand(&command ,&matrixA, n, x, y);
-		write(pipeW[i][1], &command, sizeof(Matrix));
+		write(p2cPipe[i][1], &command, sizeof(Matrix));
 
 		setCommand(&command ,&matrixB, n, x, y);
-		write(pipeW[i][1], &command, sizeof(Matrix));
+		write(p2cPipe[i][1], &command, sizeof(Matrix));
 	}
 
 
 	// Wait All Child
-	while ((wpid = wait(&status)) > 0);
+	//while ((wpid = wait(&status)) > 0);
 
 	for (i = 0; i < MAX_CHILDREN; ++i)
 	{
-		read(pipeR[i][0], &command, sizeof(Matrix));
+		read(p2cPipe[i][0], &command, sizeof(Matrix));
 
 		getMatrixSection(i, n, &x, &y);
 
@@ -126,18 +132,18 @@ void parent(pid_t chldPid[MAX_CHILDREN], int pipeR[][2], int pipeW[][2], int n, 
 
 }	
 
-void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC) {
+void children(int p2cPipe[], int n, int childnum, PipeWBC *pipeWBC) {
 
 	Matrix matrixA, matrixTempA;
 	Matrix matrixB, matrixTempB;
 	Matrix matrixC;
 
 	// Pipe Read matrixA Part
-	read(pipeR[0], &matrixA, sizeof(Matrix));
+	read(p2cPipe[0], &matrixA, sizeof(Matrix));
 
 
 	// Pipe Read matrixB Part
-	read(pipeR[0], &matrixB, sizeof(Matrix));
+	read(p2cPipe[0], &matrixB, sizeof(Matrix));
 
 	// pipe_2_4, pipe_4_2
 	// pipe_2_3, pipe_3_2
@@ -181,7 +187,7 @@ void children(int pipeR[], int pipeW[], int n, int childnum, PipeWBC *pipeWBC) {
 
 
 	// Pipe Write Part
-	write(pipeW[1], &matrixC, sizeof(Matrix)); 
+	write(p2cPipe[1], &matrixC, sizeof(Matrix)); 
 	
 	exit(0); 
 }
@@ -233,6 +239,47 @@ void conductMatrix(Matrix *matrixTarget, Matrix *matrixSource, int n, int x, int
 		}
 	}
 
+}
+
+void userControl(int argc, char *argv[], char *pathA, char* pathB, int *n) {
+
+	int opt;
+
+	if (argc != 7)
+	{
+	    fprintf(stderr, "Ooooooppppppsssss! You entered wrong arguments. Usage: \n");
+	    fprintf(stderr, "./program -i inputPathA -j inputPathB -n matrixSize\n"); 
+	    exit(EXIT_FAILURE);
+	}
+
+	while((opt = getopt(argc, argv, ":i:o:n:")) != -1)  
+	{  
+	    switch(opt)  
+	    {    
+	        case 'i':  
+	            pathA = (char *) malloc(strlen(optarg)+1);
+	            strcpy(pathA, optarg);  
+	            break;
+	        case 'o':  
+	            pathB = (char *) malloc(strlen(optarg)+1);
+	            strcpy(pathB, optarg);  
+	            break; 
+	        case 'n':  
+	            sscanf(optarg, "%d", n);
+	            if (*n < 0)
+	            {
+	                fprintf(stderr, "You entered wrong matrixSize.\n");
+	                exit(EXIT_FAILURE);                   
+	            }   
+	            break;  
+	        case ':':
+	        case '?':
+	            fprintf(stderr, "Ooooooppppppsssss!\nYou entered wrong arguments. Usage: \n");
+	            fprintf(stderr, "./program -i inputPathA -j inputPathB -n matrixSize\n");
+	            exit(EXIT_FAILURE);
+	            break;  
+	    }  
+	}
 }
 
 void myRead(int fd, char *buf) {
@@ -320,21 +367,15 @@ void setChildsPipes(PipeWBC *pipeWBC) {
 	}
 }
 
-void setParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
+void setParentPipes(int p2cPipe[][2], int pipeNumber) {
 
 	int i;
 
 	for (i = 0; i < pipeNumber; ++i)
 	{
-		if (pipe(pipeR[i]) == -1) 
+		if (pipe(p2cPipe[i]) == -1) 
 		{ 
 			fprintf(stderr, "Pipe Read %d Failed", i); 
-			exit(1);
-		}
-
-		if (pipe(pipeW[i]) == -1) 
-		{ 
-			fprintf(stderr, "Pipe Write %d Failed", i); 
 			exit(1);
 		}
 	}
@@ -363,16 +404,14 @@ void closeChildsPipes(PipeWBC *pipeWBC) {
 	close(pipeWBC->pipe_5_4[1]);
 }
 
-void closeParentPipes(int pipeR[][2], int pipeW[][2], int pipeNumber) {
+void closeParentPipes(int pipe[][2], int pipeNumber) {
 
 	int i;
 
 	for (i = 0; i < pipeNumber; ++i)
 	{
-		close(pipeR[i][0]); // Read
-		close(pipeR[i][1]); // Write
-		close(pipeW[i][0]);
-		close(pipeW[i][1]);
+		close(pipe[i][0]); // Read
+		close(pipe[i][1]); // Write
 	}
 }
 
@@ -431,7 +470,6 @@ void fillMatrixFromFile(Matrix *matrix, int n, char* filename) {
 	{
 		for (j = 0; j < n; ++j)
 		{	
-			//matrix->matrix[i][j] = (int)((*ptr) - '0');
 			matrix->matrix[i][j] = (int)(*ptr);
 			ptr = strtok(NULL, delim);
 		}
@@ -469,7 +507,7 @@ void CHLDhandler(int sig) {
 	
 	pid_t pid;
 	int status;
-
+	//fprintf(stderr, "sss\n");
 	while ((pid = waitpid(-1, &status, WNOHANG)) != -1) {
 		//fprintf(stderr, "Pid %d exited, status %d.\n", pid, status);
 	}

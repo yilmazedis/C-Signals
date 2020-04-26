@@ -26,6 +26,7 @@ int main(int argc, char const *argv[])
 	printMatrix(matrixA,n);	
 	printMatrix(matrixB,n);	
 
+	/*
 	x = 0;
 	y = 0;
 	command = setCommand(command, matrixA, n, x, y);
@@ -45,6 +46,48 @@ int main(int argc, char const *argv[])
 	y = n / 2;
 	command = setCommand(command, matrixA, n, x, y);
 	fprintf(stderr, "%s\n", command);
+	*/
+
+
+	if (pipe(p) < 0) 
+		exit(1); 
+
+	/* continued */
+	if ((pid = fork()) > 0) { 
+		
+		for (i = 0; i < n; ++i)
+		{
+			write(p[1], msg1, MSGSIZE);
+		}
+
+		// Adding this line will 
+		// not hang the program 
+		// close(p[1]); 
+		wait(NULL); 
+	} 
+
+	else { 
+
+		sleep(2);
+		// Adding this line will 
+		// not hang the program 
+		// close(p[1]);
+		for (i = 0; i < n; ++i)
+		{
+			read(p[0], inbuf, MSGSIZE);	
+			printf("%s\n", inbuf);
+		}
+		 
+			 
+
+		fprintf(stderr, "Length %d byte\n", (int)strlen(msg1) * n);
+		fprintf(stderr, "i = %d\n", i);
+
+		printf("Finished reading\n"); 
+
+		exit(0);
+	} 
+
 
 	//printMatrix(matrixA, n);
 	//printMatrix(matrixB, n);
