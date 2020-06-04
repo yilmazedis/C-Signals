@@ -4,9 +4,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <fcntl.h>
 
 #define CHEF_NUM 6
 #define INGREDIENT_NUM 2
+#define INGREDIENT_NAME_MAX_SIZE 10
 
 typedef enum
 {
@@ -24,31 +26,80 @@ typedef struct
 {
     sem_t mutex;
     Chef chef[CHEF_NUM];
-    char delivered[INGREDIENT_NUM];
+    char *delivered;
     bool isOver;
-    bool isDelivered;
     bool isCooked;
 } ChefsInfo;
 
 void *chefs(void *arg);
-void wholeSaller(ChefsInfo *chfsInf);
+void operateWholeSaller(ChefsInfo *chfsInf, int fptr);
 void setChefsAbsents(ChefsInfo *chfsInf);
 int indicateChef(ChefsInfo *chfsInf, pthread_t id);
-bool isDeliveredPrecisely(ChefsInfo *chfsInf, int chefID);
+bool isDeliveredPrecisely(ChefsInfo chfsInf, int chefID);
 void constructChefs(ChefsInfo *chfsInf);
 void destructChefs(ChefsInfo *chfsInf);
+void extendIngredientName(char ingredient, char actualName[INGREDIENT_NAME_MAX_SIZE]);
+void checkUsage(int argc, char *argv[], char **filePath);
+int checkRequirements(char *filePath);
 
-int main(void)
+int main(int argc, char *argv[])
 {
     ChefsInfo chfsInf;
+    char *filePath;
+    int fptr;
+
+    checkUsage(argc, argv, &filePath);
+
+    if(!checkRequirements(filePath)) {
+        fprintf(stderr ,"The file include less than 10 line\n");
+        exit(0);
+    }
+    // file reading
+    fptr = open(filePath, O_RDONLY);
+
+    if (fptr == -1)
+    {
+        fprintf(stderr ,"There is not a file\n");
+        exit(0);
+    }
 
     constructChefs(&chfsInf);
 
-    wholeSaller(&chfsInf);
+    operateWholeSaller(&chfsInf, fptr);
 
     destructChefs(&chfsInf);
 
+    close(fptr);
+    free(filePath);
+
     return 0;
+}
+
+int checkRequirements(char *filePath) {
+    
+    int fptr;
+    char buff[INGREDIENT_NUM + 1];
+    int i = 0;
+
+    // file reading
+    fptr = open(filePath, O_RDONLY);
+
+    if (fptr == -1)
+    {
+        printf("There is not a file\n");
+        exit(0);
+    }
+
+    while (read(fptr , buff, 3 * sizeof(char)) != 0) {
+        i++;
+    }
+
+    close(fptr);
+    
+    if (i < 10)
+        return false;
+    else
+        return true;
 }
 
 void *chefs(void *arg)
@@ -56,93 +107,114 @@ void *chefs(void *arg)
 
     ChefsInfo *chfsInf = (ChefsInfo *)arg;
     unsigned int chefID;
+    char actualName[INGREDIENT_NAME_MAX_SIZE] = "";
+    char actualName2[INGREDIENT_NAME_MAX_SIZE] = "";
 
     chefID = indicateChef(chfsInf, pthread_self());
 
     while (!chfsInf->isOver)
     {
+        extendIngredientName(chfsInf->chef[chefID].lakeIng[0], actualName);
+        extendIngredientName(chfsInf->chef[chefID].lakeIng[1], actualName2);
+        fprintf(stderr, "chef%d is waiting for %s and %s\n", chefID + 1, actualName, actualName2);
 
         sem_wait(&chfsInf->mutex); // Lock Entrance
-
-        // fprintf(stderr, "Absent %c, %c %d\n",
-        //             chfsInf->delivered[0],
-        //             chfsInf->delivered[1], chefID);
-
-        if (isDeliveredPrecisely(chfsInf, chefID))
+        if (isDeliveredPrecisely(*chfsInf, chefID))
         {
-            fprintf(stderr, "Absent %c, %c %d\n",
-                    chfsInf->chef[chefID].lakeIng[0],
-                    chfsInf->chef[chefID].lakeIng[1], chefID);
+            extendIngredientName(chfsInf->chef[chefID].lakeIng[0], actualName);
+            fprintf(stderr, "chef%d has taken the %s\n", chefID + 1, actualName);
 
-            // sleep((rand() % 5) + 1);
+            extendIngredientName(chfsInf->chef[chefID].lakeIng[1], actualName);
+            fprintf(stderr, "chef%d has taken the %s\n", chefID + 1, actualName);
+
+            //sleep((rand() % 5) + 1); // actual cal !!!
             sleep(1);
 
             chfsInf->isCooked = true;
-        }
 
+            fprintf(stderr, "chef%d has delivered the dessert to the wholesaler\n", chefID + 1);
+        }
         sem_post(&chfsInf->mutex); // Lock Exit
     }
 
-    return NULL;
+    pthread_exit(NULL);
 }
 
-void wholeSaller(ChefsInfo *chfsInf)
+void operateWholeSaller(ChefsInfo *chfsInf, int fptr)
 {
 
     char ingredient;
-    FILE *fptr;
+    char actualName[INGREDIENT_NAME_MAX_SIZE];
+    char actualName2[INGREDIENT_NAME_MAX_SIZE];
+    int count;
 
-    // file reading
-    fptr = fopen("input.txt", "r");
-
-    if (fptr == NULL)
-    {
-        printf("Cannot open file \n");
-        exit(0);
-    }
-
-    while (!feof(fptr))
+    while (count != 0)
     {
         chfsInf->isCooked = false;
-        fscanf(fptr, "%c", &ingredient);
-        if (ingredient != '\n')
-        {
-            chfsInf->delivered[0] = ingredient;
-        }
 
-        fscanf(fptr, "%c", &ingredient);
-        if (ingredient != '\n')
-        {
-            chfsInf->delivered[1] = ingredient;
-        }
+        count = read(fptr, &ingredient, sizeof(char)); 
+        chfsInf->delivered[0] = ingredient;
+        
+        count = read(fptr, &ingredient, sizeof(char));
+        chfsInf->delivered[1] = ingredient;
+    
+        extendIngredientName(chfsInf->delivered[0], actualName);
+        extendIngredientName(chfsInf->delivered[1], actualName2);
+        fprintf(stderr, "the wholesaler delivers %s and %s\n", actualName, actualName2);
 
-        fscanf(fptr, "%c", &ingredient);
+        // new  line
+        count = read(fptr, &ingredient, sizeof(char));
 
+        fprintf(stderr, "the wholesaler is waiting for the dessert\n");
+        
         while (chfsInf->isCooked == false)
         {
         }
+        
+        fprintf(stderr, "the wholesaler has obtained the dessert and left to sell it\n");
     }
 
     chfsInf->isOver = true;
 }
 
-bool isDeliveredPrecisely(ChefsInfo *chfsInf, int chefID)
+void extendIngredientName(char ingredient, char actualName[INGREDIENT_NAME_MAX_SIZE])
 {
-    if (chfsInf->isDelivered)
+    switch (ingredient)
     {
-        if (chfsInf->delivered[0] == chfsInf->chef[chefID].lakeIng[0])
+    case 'M':
+        sprintf(actualName, "%s", "milk");
+        break;
+
+    case 'F':
+        sprintf(actualName, "%s", "flour");
+        break;
+
+    case 'W':
+        sprintf(actualName, "%s", "walnuts");
+        break;
+
+    case 'S':
+        sprintf(actualName, "%s", "sugar");
+        break;
+    }
+
+}
+
+bool isDeliveredPrecisely(ChefsInfo chfsInf, int chefID)
+{
+
+    if (chfsInf.delivered[0] == chfsInf.chef[chefID].lakeIng[0])
+    {
+        if (chfsInf.delivered[1] == chfsInf.chef[chefID].lakeIng[1])
         {
-            if (chfsInf->delivered[1] == chfsInf->chef[chefID].lakeIng[1])
-            {
-                return true;
-            }
+            return true;
         }
-        else if (chfsInf->delivered[1] == chfsInf->chef[chefID].lakeIng[0])
+    }
+    else if (chfsInf.delivered[1] == chfsInf.chef[chefID].lakeIng[0])
+    {
+        if (chfsInf.delivered[0] == chfsInf.chef[chefID].lakeIng[1])
         {
-            if (chfsInf->delivered[0] == chfsInf->chef[chefID].lakeIng[1])
-            {
-                return true;
-            }
+            return true;
         }
     }
 
@@ -164,8 +236,7 @@ int indicateChef(ChefsInfo *chfsInf, pthread_t id)
 }
 
 void constructChefs(ChefsInfo *chfsInf)
-{   
-    int err;
+{
     chfsInf->isOver = false;
     setChefsAbsents(chfsInf);
 
@@ -175,16 +246,18 @@ void constructChefs(ChefsInfo *chfsInf)
         exit(0);
     }
 
+    chfsInf->delivered = (char *)malloc(INGREDIENT_NUM * sizeof(char));
+
     for (int i = 0; i < CHEF_NUM; i++)
     {
-        err = pthread_create(&(chfsInf->chef[i].tID), NULL, &chefs, chfsInf);
-
-        if (err != 0)
-            fprintf(stderr, "\ncan't create thread :[%s]", strerror(err));
+        pthread_create(&(chfsInf->chef[i].tID), NULL, &chefs, chfsInf);
     }
 }
 void destructChefs(ChefsInfo *chfsInf)
 {
+
+    free(chfsInf->delivered);
+
     for (int i = 0; i < CHEF_NUM; i++)
     {
         pthread_join(chfsInf->chef[i].tID, NULL);
@@ -193,7 +266,6 @@ void destructChefs(ChefsInfo *chfsInf)
 
 void setChefsAbsents(ChefsInfo *chfsInf)
 {
-
     chfsInf->chef[0].lakeIng[0] = 'W';
     chfsInf->chef[0].lakeIng[1] = 'S';
 
@@ -211,4 +283,33 @@ void setChefsAbsents(ChefsInfo *chfsInf)
 
     chfsInf->chef[5].lakeIng[0] = 'M';
     chfsInf->chef[5].lakeIng[1] = 'S';
+}
+
+void checkUsage(int argc, char *argv[], char **filePath)
+{
+    int opt;
+
+    if (argc != 3)
+    {
+        fprintf(stderr, "Ooooooppppppsssss! You entered wrong arguments. Usage: \n");
+        fprintf(stderr, "./program -i filePath\n");
+        exit(EXIT_FAILURE);
+    }
+    while ((opt = getopt(argc, argv, ":i:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'i':
+            *filePath = (char *)malloc(strlen(optarg) + 1);
+            sprintf(*filePath, "%s", optarg);
+            
+            break;
+        case ':':
+        case '?':
+            fprintf(stderr, "Ooooooppppppsssss! You entered wrong arguments. Usage: \n");
+            fprintf(stderr, "./program -i filePath\n");
+            exit(EXIT_FAILURE);
+            break;
+        }
+    }
 }
