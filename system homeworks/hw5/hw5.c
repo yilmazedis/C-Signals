@@ -6,9 +6,13 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include "queue.h"
+
+#define MAX(A, B) (A > B ? A : B)
+#define MIN(A, B) (A < B ? A : B)
 
 #define NAME 50
-#define GRID 2
+#define POINT 2
 #define X 0
 #define Y 1
 #define CLIENT_TAG "client"
@@ -24,17 +28,17 @@ typedef enum
 typedef struct
 {
     char name[NAME];
-    int location[GRID];
+    int location[POINT];
     double speed;
     char **flowers;
     int flowersSize;
-    // queue
+    struct Queue *queue;
 } Florist;
 
 typedef struct
 {
     char name[NAME];
-    int location[GRID];
+    int location[POINT];
     char flower[NAME];
 } Client;
 
@@ -47,6 +51,8 @@ void performClients(Florist *florist, char *filePath, int counterFlorist);
 void goDesiredPointAsString(int fp, char *str, int control);
 void getClient(int fp, Client *client);
 void printClient(Client *client);
+int chebyshevDistanceBetweenTwoPoints(int location1[POINT], int location2[POINT]);
+int getClosestFlorist(Client *client, Florist *florist, int counterFlorist);
 
 int main(int argc, char *argv[])
 {
@@ -67,6 +73,20 @@ int main(int argc, char *argv[])
     releaseAllFloristSources(florist, counterFlorist);
     free(filePath);
 
+    struct Queue *q = createQueue();
+    // enQueue(q, 10);
+    // enQueue(q, 20);
+    // deQueue(q);
+    // deQueue(q);
+    // enQueue(q, 30);
+    // enQueue(q, 40);
+    // enQueue(q, 50);
+    // deQueue(q);
+    // printf("Queue Front : %d \n", q->front->key);
+    // printf("Queue Rear : %d\n", q->rear->key);
+
+    freeQueue(q); // so important
+
     return 0;
 }
 
@@ -75,6 +95,7 @@ void performClients(Florist *florist, char *filePath, int counterFlorist)
 
     int fp;
     Client client;
+    int floristId = -1;
 
     fp = open(filePath, O_RDONLY);
     if (fp == -1)
@@ -86,8 +107,34 @@ void performClients(Florist *florist, char *filePath, int counterFlorist)
     {
         getClient(fp, &client);
 
+        floristId = getClosestFlorist(&client, florist, counterFlorist);
+        fprintf(stderr, "%d\n", floristId);
         printClient(&client);
     }
+}
+
+int getClosestFlorist(Client *client, Florist *florist, int counterFlorist) {
+    
+    int min = __INT32_MAX__;
+    int florisytId = -1;
+
+    for (int i = 0; i < counterFlorist; i++)
+    {   
+        for (int j = 0; j < florist[i].flowersSize; j++)
+        {
+            if (strcmp(florist[i].flowers[j], client->flower) == 0) {
+                min = MIN(min, chebyshevDistanceBetweenTwoPoints(florist[i].location, client->location));
+                florisytId = i;
+                break;
+            }
+        }
+    }
+    return florisytId;
+}
+
+int chebyshevDistanceBetweenTwoPoints(int location1[POINT], int location2[POINT])
+{
+    return MAX(location1[X] - location1[Y], location2[X] - location2[Y]);
 }
 
 void getClient(int fp, Client *client)
@@ -100,7 +147,8 @@ void getClient(int fp, Client *client)
 
     readStringSnippet(fp, str, _ISalpha, &next);
     sprintf(client->name, "%s", str);
-    if (isdigit(next)) {
+    if (isdigit(next))
+    {
         lseek(fp, -1, SEEK_CUR);
         readStringSnippet(fp, str, _ISdigit, &next);
         strcat(client->name, str);
@@ -118,7 +166,6 @@ void getClient(int fp, Client *client)
 
 void goDesiredPointAsString(int fp, char *str, int control)
 {
-
     char tempStr[NAME];
     char next = ' ';
 
@@ -171,6 +218,7 @@ Florist *setFlowers(Florist *florist, char *filePath, int *counterFlorist)
             sprintf(florist[*counterFlorist].flowers[florist[*counterFlorist].flowersSize], "%s", str);
             florist[*counterFlorist].flowersSize++;
         }
+        florist[*counterFlorist].queue = createQueue();
         *counterFlorist += 1;
     }
     close(fp);
@@ -211,7 +259,8 @@ void readStringSnippet(int fp, char *str, int control, char *next)
     do
     {
         read(fp, &buffer, sizeof(char));
-        if (control == _ISdigit && buffer == '-') {
+        if (control == _ISdigit && buffer == '-')
+        {
             str[count++] = '-';
         }
     } while (!__isctype(buffer, control));
@@ -234,12 +283,14 @@ void releaseAllFloristSources(Florist *florist, int counterFlorist)
 
     for (int i = 0; i < counterFlorist; i++)
     {
+        freeQueue(florist[i].queue);
         for (int j = 0; j < florist[i].flowersSize; j++)
         {
             free(florist[i].flowers[j]);
         }
         free(florist[i].flowers);
     }
+    // so important
     free(florist);
 }
 
